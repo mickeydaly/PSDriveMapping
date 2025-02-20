@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Drive Mapping Script Generator</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      background-color: #f9f9f9;
+    }
+    h1, h2 {
+      color: #333;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.25rem;
+      font-weight: bold;
+    }
+    input, select, button, textarea {
+      font-size: 1rem;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    #mapping-table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 1rem;
+      background-color: #fff;
+    }
+    #mapping-table th, #mapping-table td {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      text-align: left;
+    }
+    #script-output {
+      width: 100%;
+      height: 300px;
+      white-space: pre;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .button-row {
+      margin-top: 1rem;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      padding: 2rem;
+      border-radius: 4px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .mapping-row button {
+      margin-right: 0.5rem;
+    }
+    .footer {
+      margin-top: 2rem;
+      font-size: 0.85rem;
+      color: #777;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Drive Mapping Script Generator</h1>
+    <p>Use this form to define drive mappings, then generate a PowerShell script that creates a scheduled task to map those drives for all users.</p>
+    
+    <div class="form-group">
+      <label for="drive-letter">Drive Letter:</label>
+      <select id="drive-letter">
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="C">C</option>
+        <option value="D">D</option>
+        <option value="E">E</option>
+        <option value="F">F</option>
+        <option value="G">G</option>
+        <option value="H">H</option>
+        <option value="I">I</option>
+        <option value="J">J</option>
+        <option value="K">K</option>
+        <option value="L">L</option>
+        <option value="M">M</option>
+        <option value="N">N</option>
+        <option value="O">O</option>
+        <option value="P">P</option>
+        <option value="Q">Q</option>
+        <option value="R">R</option>
+        <option value="S">S</option>
+        <option value="T">T</option>
+        <option value="U">U</option>
+        <option value="V">V</option>
+        <option value="W">W</option>
+        <option value="X">X</option>
+        <option value="Y">Y</option>
+        <option value="Z">Z</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="unc-path">UNC Path:</label>
+      <input
+        type="text"
+        id="unc-path"
+        placeholder="e.g. \\server\share"
+        pattern="^\\\\\\\\[A-Za-z0-9._-]+(\\[A-Za-z0-9._$-]+)+$"
+        title="Must be a valid UNC path, e.g. \\server\share or \\server\share\folder"
+        required
+      />
+    </div>
+
+    <div class="form-group">
+      <label for="label">Label (optional):</label>
+      <input
+        type="text"
+        id="label"
+        placeholder="Friendly drive name"
+      />
+    </div>
+
+    <button id="add-mapping">Add Mapping</button>
+
+    <h2>Current Mappings</h2>
+    <table id="mapping-table">
+      <thead>
+        <tr>
+          <th>Drive Letter</th>
+          <th>UNC Path</th>
+          <th>Label</th>
+          <th>Remove</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="button-row">
+      <button id="generate-script">Generate Script</button>
+    </div>
+
+    <h2>Generated PowerShell Script</h2>
+    <textarea id="script-output" readonly></textarea>
+    
+    <div class="footer">
+      <p>Copy the script above and use as needed. This static page is ready for Azure Storage deployment.</p>
+    </div>
+  </div>
+
+  <script>
+    const addBtn = document.getElementById("add-mapping");
+    const generateBtn = document.getElementById("generate-script");
+    const tableBody = document.querySelector("#mapping-table tbody");
+    const scriptOutput = document.getElementById("script-output");
+
+    const driveLetterSelect = document.getElementById("drive-letter");
+    const uncPathInput = document.getElementById("unc-path");
+    const labelInput = document.getElementById("label");
+
+    // Array to hold drive mappings
+    let driveMappings = [];
+
+    // Validate UNC path via JS as a double-check (HTML pattern is our first gate)
+    function isValidUNC(path) {
+      // A simple pattern: must start with two backslashes, then require at least server\share
+      // This is a fallback; actual pattern is also in the HTML input
+      const uncRegex = /^\\\\[A-Za-z0-9._-]+(\\[A-Za-z0-9._$-]+)+$/;
+      return uncRegex.test(path);
+    }
+
+    // Render table rows
+    function renderTable() {
+      tableBody.innerHTML = "";
+      driveMappings.forEach((mapping, index) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${mapping.drive}:</td>
+          <td>${mapping.unc}</td>
+          <td>${mapping.label || ""}</td>
+          <td><button data-index="${index}" class="remove-button">Remove</button></td>
+        `;
+        tableBody.appendChild(row);
+      });
+
+      // Attach remove handlers
+      const removeButtons = document.querySelectorAll(".remove-button");
+      removeButtons.forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          const idx = e.target.getAttribute("data-index");
+          driveMappings.splice(idx, 1);
+          renderTable();
+        });
+      });
+    }
+
+    // Build the final PowerShell script from the user-defined mappings
+    function buildScript() {
+      // Build the $DesiredMappings portion dynamically
+      let desiredMappingsContent = driveMappings.map(mapping => {
+        // Use the Label line only if there's a label
+        return `    @{\r\n        DriveLetter = "${mapping.drive}:"\r\n        UNCPath     = "${mapping.unc}"\r\n        Label       = "${mapping.label.replace(/"/g, '\\"')}"\r\n    }`;
+      }).join(",\r\n");
+
+      if (!desiredMappingsContent.trim()) {
+        desiredMappingsContent = `    # No mappings added yet`;
+      }
+
+      // Full script content
+      // Keeping the entire logic from the provided template:
+      const script = `### 0. Housekeeping: Create folder for scripts
+$localScriptsFolder = "C:\\Scripts"
+if (!(Test-Path $localScriptsFolder)) {
+    New-Item -ItemType Directory -Path $localScriptsFolder -Force | Out-Null
+}
+
+### 1. Create the main PowerShell script for drive mapping
+
+$mapDrivesContent = @'
+# -----------------------------
+# C:\\Scripts\\MapDrives.ps1
+# -----------------------------
+# This script runs in *user context* at logon (triggered by a Scheduled Task).
+# It enumerates existing net use connections, removes outdated ones,
+# and adds the correct shares (non-persistent). It also sets friendly labels.
+# -----------------------------
+
+Write-Host "Running MapDrives.ps1 as user $($env:USERNAME)..."
+
+# Hard-code desired mappings here (example with labels):
+$DesiredMappings = @(
+${desiredMappingsContent}
+)
+
+# Gather current net use lines that indicate mapped drives
+$currentMappings = (net use) -match 'OK'
+
+foreach ($line in $currentMappings) {
+    # Example line: "OK           P:        \\\\server\\share"
+    $parts = $line -split '\\s+', 4
+    if ($parts.Count -ge 3) {
+        $driveLetter = $parts[1].Trim()
+        $currentUNC  = $parts[2].Trim()
+
+        # Check if this drive is still in our DesiredMappings
+        $desiredEntry = $DesiredMappings | Where-Object { $_.DriveLetter -eq $driveLetter }
+
+        if ($desiredEntry) {
+            # If the same drive letter is desired, but UNC differs, remove it
+            if ($desiredEntry.UNCPath -ne $currentUNC) {
+                Write-Host "Removing outdated mapping $driveLetter -> $currentUNC"
+                net use $driveLetter /delete /y
+            }
+        }
+        else {
+            # Drive letter not in the desired list at all
+            Write-Host "Removing undesired mapping $driveLetter -> $currentUNC"
+            net use $driveLetter /delete /y
+        }
+    }
+}
+
+# Now add (or re-add) each desired mapping
+foreach ($entry in $DesiredMappings) {
+    $drive  = $entry.DriveLetter
+    $unc    = $entry.UNCPath
+    $label  = $entry.Label
+
+    # Check if already mapped to the correct UNC
+    $alreadyMapped = $currentMappings | Where-Object { $_ -match "$drive\\s+$unc" }
+
+    if (-not $alreadyMapped) {
+        Write-Host "Mapping drive $drive to $unc"
+        net use $drive $unc /persistent:no
+    }
+
+    # If a label is specified, rename the drive in Explorer
+    if ($label) {
+        try {
+            # Use COM interface (Shell.Application) to rename the drive
+            $shell = New-Object -ComObject Shell.Application
+            Start-Sleep -Seconds 1  # small delay so OS "notices" the mapping
+
+            $driveObject = $shell.Namespace($drive)
+            if ($driveObject) {
+                $driveObject.Self.Name = $label
+                Write-Host "Set friendly label '$label' on $drive"
+            }
+        }
+        catch {
+            Write-Host "Could not set label for $drive. $($_.Exception.Message)"
+        }
+    }
+}
+
+Write-Host "Drive mappings updated for user $($env:USERNAME)."
+'@
+
+# Write the file to disk
+$mapDrivesPath = Join-Path $localScriptsFolder "MapDrives.ps1"
+Set-Content -Path $mapDrivesPath -Value $mapDrivesContent -Encoding UTF8
+
+### 2. Create (or Update) the Scheduled Task
+$taskName = "MapDrivesAtLogon"
+
+# Create a trigger for logon
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+
+# We want to hide the console window, so we add -WindowStyle Hidden
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \\"$mapDrivesPath\\""
+
+# Principal with the Users group
+$principal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\\Users"
+
+# Settings: set -Hidden to avoid showing task UI
+$settings = New-ScheduledTaskSettingsSet -Hidden
+
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force
+
+Write-Host "All setup complete! 'MapDrives.ps1' + the hidden Scheduled Task ($taskName) are in place."
+`;
+      return script;
+    }
+
+    // Add new mapping
+    addBtn.addEventListener("click", () => {
+      const driveLetter = driveLetterSelect.value;
+      const uncPath = uncPathInput.value.trim();
+      const label = labelInput.value.trim();
+
+      if (!uncPath || !isValidUNC(uncPath)) {
+        alert("Please enter a valid UNC path.");
+        return;
+      }
+
+      // Check if drive letter is already in use
+      const existing = driveMappings.find(m => m.drive === driveLetter);
+      if (existing) {
+        alert("That drive letter has already been used.");
+        return;
+      }
+
+      driveMappings.push({
+        drive: driveLetter,
+        unc: uncPath,
+        label: label
+      });
+
+      // Clear form
+      uncPathInput.value = "";
+      labelInput.value = "";
+
+      renderTable();
+    });
+
+    // Generate script
+    generateBtn.addEventListener("click", () => {
+      scriptOutput.value = buildScript();
+    });
+  </script>
+</body>
+</html>
