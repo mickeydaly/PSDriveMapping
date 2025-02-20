@@ -102,12 +102,13 @@
 
     <div class="form-group">
       <label for="unc-path">UNC Path:</label>
+      <!-- Updated pattern to allow $env:VARIABLE segments as well as normal UNC segments -->
       <input
         type="text"
         id="unc-path"
-        placeholder="e.g. \\server\share"
-        pattern="^\\\\\\\\[A-Za-z0-9._-]+(\\[A-Za-z0-9._$-]+)+$"
-        title="Must be a valid UNC path, e.g. \\server\share or \\server\share\folder"
+        placeholder="e.g. \\server\share or \\server\share\$env:USERNAME"
+        pattern="^\\\\(?:[A-Za-z0-9._\$-]+|\$env:[A-Za-z0-9._-]+)(?:\\(?:[A-Za-z0-9._\$-]+|\$env:[A-Za-z0-9._-]+))*$"
+        title="Must be a valid UNC path, allowing segments like $env:USERNAME."
         required
       />
     </div>
@@ -161,11 +162,10 @@
     // Array to hold drive mappings
     let driveMappings = [];
 
-    // Validate UNC path via JS as a double-check (HTML pattern is our first gate)
+    // JS function to validate UNC, allowing $env:VARIABLE segments
     function isValidUNC(path) {
-      // A simple pattern: must start with two backslashes, then require at least server\share
-      // This is a fallback; actual pattern is also in the HTML input
-      const uncRegex = /^\\\\[A-Za-z0-9._-]+(\\[A-Za-z0-9._$-]+)+$/;
+      // Matches \\ then segments that are either normal or $env:NAME
+      const uncRegex = /^\\\\(?:[A-Za-z0-9._$-]+|\$env:[A-Za-z0-9._-]+)(?:\\(?:[A-Za-z0-9._$-]+|\$env:[A-Za-z0-9._-]+))*$/;
       return uncRegex.test(path);
     }
 
@@ -207,7 +207,6 @@
       }
 
       // Full script content
-      // Keeping the entire logic from the provided template:
       const script = `### 0. Housekeeping: Create folder for scripts
 $localScriptsFolder = "C:\\Scripts"
 if (!(Test-Path $localScriptsFolder)) {
@@ -328,8 +327,9 @@ Write-Host "All setup complete! 'MapDrives.ps1' + the hidden Scheduled Task ($ta
       const uncPath = uncPathInput.value.trim();
       const label = labelInput.value.trim();
 
+      // Double-check UNC path validity with JS
       if (!uncPath || !isValidUNC(uncPath)) {
-        alert("Please enter a valid UNC path.");
+        alert("Please enter a valid UNC path (you can include $env:VARIABLE).");
         return;
       }
 
